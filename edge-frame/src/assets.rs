@@ -261,17 +261,18 @@ pub mod prepare {
         };
 
         for (index, output_file) in output_files.iter().enumerate() {
-            let file_name = output_file.file_name().unwrap().to_str().unwrap();
-            let output_folder = output_file
-                .parent()
-                .unwrap()
+            let file = output_file
                 .strip_prefix(&output_dir)
                 .unwrap();
+            let file_uri = file
+                .to_str()
+                .unwrap()
+                .replace(std::path::MAIN_SEPARATOR, "/");
 
-            if file_name == "__empty__" {
+            if file_uri == "__empty__" {
                 println!("cargo:rustc-env={}_EDGE_FRAME_ASSET_URI_{}=", module, index,);
             } else {
-                let file = output_folder.join(file_name);
+                let file = file;
                 println!(
                     "cargo:rustc-env={}_EDGE_FRAME_ASSET_URI_{}=/{}",
                     module,
@@ -291,36 +292,91 @@ pub mod prepare {
         Ok(())
     }
 
-    fn visit_dirs(dir: &Path, cb: &dyn Fn(&DirEntry) -> PathBuf) -> anyhow::Result<Vec<PathBuf>> {
-        let mut output_files = vec![];
-        if dir.is_dir() {
-            for entry in fs::read_dir(dir)? {
-                let entry = entry?;
-                let path = entry.path();
-                if path.is_dir() {
-                    output_files.extend(visit_dirs(&path, cb)?);
-                } else {
-                    output_files.push(cb(&entry));
-                }
+
+    fn visit_files(path: &Path) -> anyhow::Result<Vec<PathBuf>> {
+        if path.is_file() {
+            Ok(vec![path.to_owned()])
+        } else {
+            let mut paths = Vec::new();
+            for entry in fs::read_dir(path)? {
+
+                paths.extend(visit_files(&entry?.path())?);
+
             }
+
+            Ok(paths)
         }
-        Ok(output_files)
+
     }
 
-    pub fn compress(
+    // fn visit_dirs(dir: &Path, cb: &dyn Fn(&DirEntry) -> PathBuf) -> anyhow::Result<Vec<PathBuf>> {
+    //     let mut output_files = vec![];
+    //     if dir.is_dir() {
+    //         for entry in fs::read_dir(dir)? {
+    //             let entry = entry?;
+    //             let path = entry.path();
+    //             if path.is_dir() {
+    //                 output_files.extend(visit_dirs(&path, cb)?);
+    //             } else {
+    //                 output_files.push(cb(&entry));
+    //             }
+    //         }
+    //     }
+    //     Ok(output_files)
+    // }
+
+    // pub fn compress(
+    //     assets_dir: impl AsRef<Path>,
+    //     output_dir: impl AsRef<Path>,
+    //     track: impl Fn(&Path),
+    // ) -> anyhow::Result<Vec<PathBuf>> {
+    //     let assets_dir = assets_dir.as_ref();
+    //     let output_dir = output_dir.as_ref();
+    //     let output_files = visit_dirs(assets_dir, &|w| {
+    //         compress_file(&track, output_dir, assets_dir, w)
+    //     })?;
+
+    //     Ok(output_files)
+    // }
+pub fn compress(
         assets_dir: impl AsRef<Path>,
         output_dir: impl AsRef<Path>,
         track: impl Fn(&Path),
     ) -> anyhow::Result<Vec<PathBuf>> {
         let assets_dir = assets_dir.as_ref();
         let output_dir = output_dir.as_ref();
-        let output_files = visit_dirs(assets_dir, &|w| {
-            compress_file(&track, output_dir, assets_dir, w)
-        })?;
+
+
+        let output_files = visit_files(assets_dir)?
+            .into_iter().filter_map(|file| Some(file))
+            .filter(|file| file.metadata().map(|md| md.is_file()).unwrap_or(false))
+            .map(|file| {
+                let output_file = compress_file(&track, output_dir, assets_dir, &file);
+                // track(&file.path());
+
+                // let output_file =
+                //     output_dir.join(format!("{}.gz", file.file_name().to_str().unwrap()));
+
+                // track(&output_file);
+
+                // fs::create_dir_all(output_dir).unwrap();
+
+                // io::copy(
+                //     &mut fs::File::open(file.path()).unwrap(),
+                //     &mut GzEncoder::new(
+                //         fs::File::create(&output_file).unwrap(),
+                //         Compression::best(),
+                //     ),
+                // )
+                // .unwrap();
+
+                output_file
+            })
+            .collect::<Vec<_>>();
 
         Ok(output_files)
     }
-
+    
     /// Compress and write file
     ///
     /// # Panics
@@ -330,14 +386,14 @@ pub mod prepare {
         track: impl Fn(&Path),
         output_dir: &Path,
         root: &Path,
-        file: &fs::DirEntry,
+        file: &PathBuf,
     ) -> PathBuf {
-        track(&file.path());
+        track(&file);
         let output_folder =
-            output_dir.join(file.path().parent().unwrap().strip_prefix(root).unwrap());
+            output_dir.join(file.parent().unwrap().strip_prefix(root).unwrap());
         let output_file = output_dir.join(format!(
             "{}.gz",
-            file.path().strip_prefix(root).unwrap().display()
+            file.strip_prefix(root).unwrap().display()
         ));
         // let output_file = output_dir.join(format!("{}.gz", file.file_name().to_str().unwrap()));
 
@@ -346,7 +402,7 @@ pub mod prepare {
         fs::create_dir_all(output_folder).unwrap();
 
         io::copy(
-            &mut fs::File::open(file.path()).unwrap(),
+            &mut fs::File::open(file).unwrap(),
             &mut GzEncoder::new(fs::File::create(&output_file).unwrap(), Compression::best()),
         )
         .unwrap();
