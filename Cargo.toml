@@ -14,10 +14,10 @@ debug = true # Symbols are nice and they don't increase the size on Flash
 opt-level = "z"
 
 [workspace.dependencies]
-yewdux-middleware = {  git="https://github.com/DaneSlattery/yewdux-middleware.git" , branch="dms_anymap"}
-yewdux = {version = "*",default-features = false}
-yew={version = "0.22.0", default-features = false}
+yewdux-middleware = { version = "0.4.0" }
+yewdux = { version = "*", default-features = false}
+yew = { version = "0.22.0", default-features = false}
 yew-router = { version = "0.19.0"}
 
 [patch.crates-io]
-yewdux = {git="https://github.com/orzklv/yewdux.git",branch = "master"}
+yewdux = { git = "https://github.com/orzklv/yewdux.git", branch = "master"}
